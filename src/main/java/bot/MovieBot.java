@@ -65,6 +65,6 @@ public class MovieBot extends TelegramLongPollingBot {
 
     @Override
     public String getBotToken() {
-        return "7249460019:AAEOcKBjmmYCqFCtVUEEZ6mfZYTjS-msu8U";
+        return "token";
     }
 }
