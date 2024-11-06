@@ -61,6 +61,16 @@ public class DatabaseObjects {
         return null;
     }
 
+    public static Movie getMovieByName(String text) {
+        for (Movie movie : movies) {
+            if (movie.getName().equals(text)) {
+                return movie;
+            }
+        }
+
+        return null;
+    }
+
     public static List<Movie> getMoviesByCategory(String category) {
         List<Movie> moviesByCategory = new ArrayList<>();
         for (Movie movie : movies) {

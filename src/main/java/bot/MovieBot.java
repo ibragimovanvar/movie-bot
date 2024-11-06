@@ -1,5 +1,6 @@
 package bot;
 
+import buttons.ButtonUtil;
 import consts.MovieBotConstants;
 import db.DatabaseObjects;
 import model.Movie;
@@ -15,8 +16,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import user.TelegramUser;
 import user.TelegramUserState;
+import utils.MovieUtil;
 
-import javax.xml.crypto.Data;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,70 @@ public class MovieBot extends TelegramLongPollingBot {
         String chatId = update.getMessage().getChatId().toString();
         String text = update.getMessage().getText();
 
+        TelegramUser currentUser = registerOrGetCurrentUser(chatId, update);
+
+        if (text.equals("/start") || text.equals(MovieBotConstants.backButton)) {
+            SendMessage sendMessage = ButtonUtil.sendStarterKeyboard(chatId, currentUser);
+            messageSender(sendMessage);
+        }
+
+        if(currentUser.getState().equals(TelegramUserState.CATEGORY)){
+            sendCategoryButtons(chatId, text, currentUser);
+        }else if(currentUser.getState().equals(TelegramUserState.CATEGORY_FILM)){
+            sendCategoryFilmButtons(chatId, text, currentUser);
+        }else if(currentUser.getState().equals(TelegramUserState.CATEGORY_FILM_CHOSEN)){
+            sendChosenFilm(chatId, text);
+        }else if(currentUser.getState().equals(TelegramUserState.MAIN_MENU)){
+            sendStarterButtons(text, chatId, currentUser);
+        }
+
+    }
+
+    private void sendChosenFilm(String chatId, String text) {
+        Movie movieByName = DatabaseObjects.getMovieByName(text.substring(3));
+        if(movieByName == null){
+            SendMessage sendMessage = new SendMessage(chatId, "Bunday kino topilmadi!");
+            messageSender(sendMessage);
+        }else{
+            SendVideo sendVideo = new SendVideo();
+            sendVideo.setChatId(chatId);
+            sendVideo.setVideo(new InputFile(new File(movieByName.getUrl())));
+            sendVideo.setCaption(MovieUtil.movieCaptionGenerator(movieByName));
+            messageSender(sendVideo);
+        }
+    }
+    private void sendCategoryFilmButtons(String chatId, String text, TelegramUser currentUser) {
+        List<Movie> moviesByCategory = DatabaseObjects.getMoviesByCategory(text);
+        SendMessage sendMessage = new SendMessage(chatId, "Kinolardan birini tanlang!");
+        ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
+        List<KeyboardRow> keyboardRowList = new ArrayList<>();
+        if(moviesByCategory.size() > 0){
+            int i = 1;
+            for (Movie movie : moviesByCategory) {
+                KeyboardRow keyboardRow = new KeyboardRow();
+                KeyboardButton keyboardButton = new KeyboardButton();
+                keyboardButton.setText(i + ". " +movie.getName());
+                keyboardRow.add(keyboardButton);
+                keyboardRowList.add(keyboardRow);
+                i++;
+            }
+        }else{
+            sendMessage = new SendMessage(chatId, "Bu kategoriyada kinolar topilmadi!");
+            messageSender(sendMessage);
+        }
+        KeyboardRow backButtonRow = new KeyboardRow();
+        KeyboardButton backButton = new KeyboardButton();
+        backButton.setText(MovieBotConstants.backButton);
+        backButtonRow.add(backButton);
+        keyboardRowList.add(backButtonRow);
+        replyKeyboardMarkup.setKeyboard(keyboardRowList);
+        replyKeyboardMarkup.setResizeKeyboard(true);
+        replyKeyboardMarkup.setOneTimeKeyboard(true);
+        sendMessage.setReplyMarkup(replyKeyboardMarkup);
+        messageSender(sendMessage);
+        currentUser.setState(TelegramUserState.CATEGORY_FILM_CHOSEN);
+    }
+    private TelegramUser registerOrGetCurrentUser(String chatId, Update update) {
         TelegramUser currentUser = null;
 
         for (TelegramUser telegramUser : DatabaseObjects.telegramUsers) {
@@ -42,94 +107,45 @@ public class MovieBot extends TelegramLongPollingBot {
             DatabaseObjects.telegramUsers.add(currentUser);
         }
 
-        if (text.equals("/start")) {
-            sendStarterKeyboard(chatId, currentUser);
-        }
-        if(text.equals(MovieBotConstants.backButton)){
-            currentUser.setState(TelegramUserState.MAIN_MENU);
-        }
-        if(currentUser.getState().equals(TelegramUserState.CATEGORY)){
-            List<Movie> moviesByCategory = DatabaseObjects.getMoviesByCategory(text);
-            if(moviesByCategory.size() > 0){
-                for (Movie movie : moviesByCategory) {
-                    SendVideo sendVideo = new SendVideo(chatId, new InputFile(new File(movie.getUrl())));
-                    sendVideo.setCaption(movieCaptionGenerator(movie));
-                    sendMyMessage(sendVideo);
-                }
-            }else{
-                SendMessage sendMessage = new SendMessage(chatId, "Bu kategoriyada kinolar topilmadi!");
-                sendMyMessage(sendMessage);
+        return currentUser;
+    }
+    private void sendStarterButtons(String text, String chatId, TelegramUser currentUser) {
+        switch (text) {
+            case MovieBotConstants.movieStarterButton1 -> {
+                SendMessage sendMessage = new SendMessage(chatId, "Izlayotgan kinoni raqamini kiriting!");
+                messageSender(sendMessage);
             }
-        }
-        if (currentUser.getState().equals(TelegramUserState.MAIN_MENU)) {
-            sendStarterKeyboard(chatId, currentUser);
-            switch (text) {
-                case MovieBotConstants.movieStarterButton1 -> {
-                    SendMessage sendMessage = new SendMessage(chatId, "Izlayotgan kinoni raqamini kiriting!");
-                    sendMyMessage(sendMessage);
-                }
-                case MovieBotConstants.movieStarterButton2 -> {
-                    SendMessage sendMessage = new SendMessage(chatId, "Kategoriyani tanlang!");
-                    sendMyMessage(sendMessage);
-                    sendCategoryKeyboard(chatId, currentUser);
-                }
-                case MovieBotConstants.movieStarterButton3 -> {
-                    SendMessage sendMessage = new SendMessage(chatId, "Eng sara kinolar ro'yxati");
-                    sendMyMessage(sendMessage);
-                }
-                case MovieBotConstants.movieStarterButton4 -> {
-                    SendMessage sendMessage = new SendMessage(chatId, "Haftadagi TOP kinolar ro'yxati:");
-                    sendMyMessage(sendMessage);
-                }
+            case MovieBotConstants.movieStarterButton2 -> {
+                SendMessage sendMessage = new SendMessage(chatId, "Kategoriyani tanlang!");
+                messageSender(sendMessage);
+                sendCategoryKeyboard(chatId, currentUser);
             }
-        }
-
-        Movie movieByCode = DatabaseObjects.getMovieByCode(Integer.parseInt(text));
-        if (movieByCode == null) {
-            SendMessage sendMessage = new SendMessage(chatId, "Bunaqa kodli kino yo'q");
-            sendMyMessage(sendMessage);
-        } else {
-            SendVideo sendVideo = new SendVideo(chatId, new InputFile(new File(movieByCode.getUrl())));
-            sendVideo.setCaption(movieCaptionGenerator(movieByCode));
-            sendMyMessage(sendVideo);
+            case MovieBotConstants.movieStarterButton3 -> {
+                SendMessage sendMessage = new SendMessage(chatId, "Eng sara kinolar ro'yxati");
+                messageSender(sendMessage);
+            }
+            case MovieBotConstants.movieStarterButton4 -> {
+                SendMessage sendMessage = new SendMessage(chatId, "Haftadagi TOP kinolar ro'yxati:");
+                messageSender(sendMessage);
+            }
         }
     }
-
-    private void sendStarterKeyboard(String chatId, TelegramUser user) {
-        SendMessage sendMessage = new SendMessage(chatId, "Starter tugmalardan birini tanlang");
-        ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
-
-        List<KeyboardRow> keyboardRows = new ArrayList<>();
-
-        KeyboardRow keyboardRow1 = new KeyboardRow();
-        KeyboardRow keyboardRow2 = new KeyboardRow();
-        KeyboardRow keyboardRow3 = new KeyboardRow();
-
-        KeyboardButton keyboardButton1 = new KeyboardButton(MovieBotConstants.movieStarterButton1);
-        KeyboardButton keyboardButton2 = new KeyboardButton(MovieBotConstants.movieStarterButton2);
-        KeyboardButton keyboardButton3 = new KeyboardButton(MovieBotConstants.movieStarterButton3);
-        KeyboardButton keyboardButton4 = new KeyboardButton(MovieBotConstants.movieStarterButton4);
-
-        keyboardRow1.add(keyboardButton1);
-        keyboardRow2.add(keyboardButton2);
-        keyboardRow2.add(keyboardButton3);
-        keyboardRow3.add(keyboardButton4);
-
-        keyboardRows.add(keyboardRow1);
-        keyboardRows.add(keyboardRow2);
-        keyboardRows.add(keyboardRow3);
-
-        replyKeyboardMarkup.setKeyboard(keyboardRows);
-        replyKeyboardMarkup.setResizeKeyboard(true);
-        replyKeyboardMarkup.setOneTimeKeyboard(true);
-        sendMessage.setReplyMarkup(replyKeyboardMarkup);
-
-        user.setState(TelegramUserState.MAIN_MENU);
-
-        sendMyMessage(sendMessage);
+    private void sendCategoryButtons(String chatId, String text, TelegramUser currentUser) {
+        List<Movie> moviesByCategory = DatabaseObjects.getMoviesByCategory(text);
+        if(moviesByCategory.size() > 0){
+            for (Movie movie : moviesByCategory) {
+                SendVideo sendVideo = new SendVideo(chatId, new InputFile(new File(movie.getUrl())));
+                sendVideo.setCaption(MovieUtil.movieCaptionGenerator(movie));
+                messageSender(sendVideo);
+            }
+        }else{
+            SendMessage sendMessage = new SendMessage(chatId, "Bu kategoriyada kinolar topilmadi!");
+            messageSender(sendMessage);
+        }
+        currentUser.setState(TelegramUserState.CATEGORY_FILM);
     }
     private void sendCategoryKeyboard(String chatId, TelegramUser user) {
-        SendMessage sendMessage = new SendMessage(chatId, "Starter tugmalardan birini tanlang");
+        SendMessage sendMessage = new SendMessage(chatId, "Category tugmalardan birini tanlang");
         ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
         List<KeyboardRow> keyboardRows = new ArrayList<>();
 
@@ -151,35 +167,22 @@ public class MovieBot extends TelegramLongPollingBot {
         sendMessage.setReplyMarkup(replyKeyboardMarkup);
 
         user.setState(TelegramUserState.CATEGORY);
-        sendMyMessage(sendMessage);
+        messageSender(sendMessage);
     }
 
-    private void sendMyMessage(SendMessage sendMessage) {
+    private void messageSender(SendMessage sendMessage) {
         try {
             execute(sendMessage);
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
     }
-
-    private void sendMyMessage(SendVideo sendVideo) {
+    private void messageSender(SendVideo sendVideo) {
         try {
             execute(sendVideo);
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
-    }
-
-    private String movieCaptionGenerator(Movie movieByCode) {
-        return
-                "Kino nomi: " + movieByCode.getName() + "\n" +
-                        "Kino sifati: " + movieByCode.getQuality().alias + "\n" +
-                        "Kino kodi: " + movieByCode.getCode() + "\n" +
-                        "Uzunligi: " + movieByCode.getHourLen() + ":" + movieByCode.getMinuteLen() + ":" + movieByCode.getSecondsLen() + "\n" +
-                        "Kino janri: " + movieByCode.getCategory().getName() + "\n" +
-                        "Chiqgan yili: " + movieByCode.getReleaseDate() + "\n" +
-                        "Reytingi: " + movieByCode.getMovieRate() + "⭐️\n" +
-                        "Ko'rilgan : " + movieByCode.getViewerCount() + " marta ko'rilgan";
     }
 
     @Override
